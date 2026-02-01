@@ -1,0 +1,57 @@
+[package]
+name = "tsfile-oxide"
+version = "0.1.0"
+edition = "2024"
+authors = ["omar120cuet@gmail.com"]
+readme = "README.md"
+description = "Idiomatic Rust implementation of the Apache TsFile time-series file format"
+license = "Apache-2.0"
+
+[dependencies]
+# Error handling — replaces C++ int error codes + RET_FAIL macro
+thiserror = "2"
+
+# Compression — replaces vendored C++ third_party/ libraries
+snap = "1"          # Snappy: replaces vendored google_snappy/
+flate2 = "1"        # Gzip: replaces vendored zlib-1.3.1/ (uses miniz_oxide, pure Rust)
+lz4_flex = "0.11"   # LZ4: replaces vendored lz4/ (pure Rust, no unsafe in public API)
+
+# Hashing — needed for bloom filter compatibility with C++ MurmurHash3
+murmur3 = "0.1"
+
+# Byte buffer utilities — replaces C++ ByteStream + SerializationUtil
+bytes = "1"
+
+# Arena allocator — replaces C++ PageArena for reader-side deserialization
+bumpalo = "3"
+
+# Date/time — for DATE type support (C++ DateConverter equivalent)
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+# Logging
+log = "0.4"
+
+[dev-dependencies]
+# Property-based testing — encoder/decoder round-trip verification
+proptest = "1"
+
+# Benchmarking — performance comparison against C++ baseline
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Convenient test assertions
+pretty_assertions = "1"
+
+# Temp files for integration tests
+tempfile = "3"
+
+[[bench]]
+name = "encoding"
+harness = false
+
+[[bench]]
+name = "compression"
+harness = false
+
+[[bench]]
+name = "read_write"
+harness = false
