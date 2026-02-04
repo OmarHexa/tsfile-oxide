@@ -24,6 +24,7 @@ pub enum TsValue {
     Double(f64),
     /// Text/String/Blob data stored as raw bytes.
     Text(Vec<u8>),
+    String(String),
 }
 
 impl TsValue {
@@ -36,6 +37,7 @@ impl TsValue {
             TsValue::Float(_) => TSDataType::Float,
             TsValue::Double(_) => TSDataType::Double,
             TsValue::Text(_) => TSDataType::Text,
+            TsValue::String(_) => TSDataType::String,
         }
     }
 
@@ -86,6 +88,14 @@ impl TsValue {
             _ => None,
         }
     }
+
+    /// Attempt to extract a string. Returns None if variant doesn't match.
+    pub fn as_string(&self) -> Option<&str> {
+        match self {
+            TsValue::String(v) => Some(v),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -100,6 +110,10 @@ mod tests {
         assert_eq!(TsValue::Float(0.0).data_type(), TSDataType::Float);
         assert_eq!(TsValue::Double(0.0).data_type(), TSDataType::Double);
         assert_eq!(TsValue::Text(vec![]).data_type(), TSDataType::Text);
+        assert_eq!(
+            TsValue::String("".to_string()).data_type(),
+            TSDataType::String
+        );
     }
 
     #[test]
@@ -109,7 +123,14 @@ mod tests {
         assert_eq!(TsValue::Int64(-1).as_i64(), Some(-1));
         assert_eq!(TsValue::Float(3.14).as_f32(), Some(3.14));
         assert_eq!(TsValue::Double(2.718).as_f64(), Some(2.718));
-        assert_eq!(TsValue::Text(b"hello".to_vec()).as_text(), Some(b"hello".as_slice()));
+        assert_eq!(
+            TsValue::Text(b"hello".to_vec()).as_text(),
+            Some(b"hello".as_slice())
+        );
+        assert_eq!(
+            TsValue::String("hello".to_string()).as_string(),
+            Some("hello")
+        );
     }
 
     #[test]

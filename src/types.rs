@@ -7,7 +7,7 @@
 // deserialization is checked — an invalid byte produces an error rather
 // than undefined behavior.
 
-use crate::error::{TsFileError, Result};
+use crate::error::{Result, TsFileError};
 
 /// Data types supported by TsFile. Discriminant values must match C++ db_common.h.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -19,6 +19,7 @@ pub enum TSDataType {
     Float = 3,
     Double = 4,
     Text = 5,
+    String = 6,
 }
 
 impl TryFrom<u8> for TSDataType {
@@ -32,6 +33,7 @@ impl TryFrom<u8> for TSDataType {
             3 => Ok(Self::Float),
             4 => Ok(Self::Double),
             5 => Ok(Self::Text),
+            6 => Ok(Self::String),
             _ => Err(TsFileError::InvalidArg(format!(
                 "unknown TSDataType discriminant: {value}"
             ))),

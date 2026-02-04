@@ -16,8 +16,8 @@
 // String format: i32 length prefix (big-endian fixed) + raw UTF-8 bytes.
 // This matches the Java TsFile convention used by the C++ implementation.
 
+use crate::error::{Result, TsFileError};
 use std::io::{Read, Write};
-use crate::error::{TsFileError, Result};
 
 // ---------------------------------------------------------------------------
 // Unsigned varint
@@ -28,15 +28,15 @@ use crate::error::{TsFileError, Result};
 pub fn write_var_u32(writer: &mut impl Write, mut value: u32) -> Result<usize> {
     let mut bytes_written = 0;
     loop {
-        let mut byte = (value & 0x7F) as u8;
-        value >>= 7;
+        let mut byte = (value & 0x7F) as u8; // take the lower 7 bits
+        value >>= 7; // shift right by 7 bits
         if value != 0 {
-            byte |= 0x80;
+            byte |= 0x80; // if there are more bytes to write, set the most significant bit
         }
         writer.write_all(&[byte])?;
         bytes_written += 1;
         if value == 0 {
-            break;
+            break; // if no more bytes to write, break
         }
     }
     Ok(bytes_written)
@@ -44,12 +44,11 @@ pub fn write_var_u32(writer: &mut impl Write, mut value: u32) -> Result<usize> {
 
 /// Read a variable-length u32. Consumes 1-5 bytes.
 pub fn read_var_u32(reader: &mut impl Read) -> Result<u32> {
-    let mut result: u32 = 0;
-    let mut shift: u32 = 0;
-    loop {
-        let mut buf = [0u8; 1];
-        reader.read_exact(&mut buf)?;
-        let byte = buf[0];
+    let mut result = 0u32;
+    let mut shift = 0u32;
+
+    for byte in reader.bytes() {
+        let byte = byte?;
         result |= ((byte & 0x7F) as u32) << shift;
         if byte & 0x80 == 0 {
             return Ok(result);
@@ -59,6 +58,7 @@ pub fn read_var_u32(reader: &mut impl Read) -> Result<u32> {
             return Err(TsFileError::Corrupted("varint u32 too long".into()));
         }
     }
+    Err(TsFileError::Corrupted("Incomplete varint".into()))
 }
 
 /// Write a u64 as a variable-length integer.
@@ -82,12 +82,10 @@ pub fn write_var_u64(writer: &mut impl Write, mut value: u64) -> Result<usize> {
 
 /// Read a variable-length u64. Consumes 1-10 bytes.
 pub fn read_var_u64(reader: &mut impl Read) -> Result<u64> {
-    let mut result: u64 = 0;
-    let mut shift: u32 = 0;
-    loop {
-        let mut buf = [0u8; 1];
-        reader.read_exact(&mut buf)?;
-        let byte = buf[0];
+    let mut result = 0u64;
+    let mut shift = 0u32;
+    for byte in reader.bytes() {
+        let byte = byte?;
         result |= ((byte & 0x7F) as u64) << shift;
         if byte & 0x80 == 0 {
             return Ok(result);
@@ -97,6 +95,7 @@ pub fn read_var_u64(reader: &mut impl Read) -> Result<u64> {
             return Err(TsFileError::Corrupted("varint u64 too long".into()));
         }
     }
+    Err(TsFileError::Corrupted("Incomplete varint".into()))
 }
 
 // ---------------------------------------------------------------------------
@@ -175,25 +174,47 @@ pub fn read_i64(reader: &mut impl Read) -> Result<i64> {
 }
 
 pub fn write_f32(writer: &mut impl Write, value: f32) -> Result<()> {
-    writer.write_all(&value.to_be_bytes())?;
+    let bits = if value.is_nan() {
+        // The standard Java/JDK "Quiet NaN" pattern
+        0x7fc0_0000u32
+    } else {
+        value.to_bits()
+    };
+    writer.write_all(&bits.to_be_bytes())?;
     Ok(())
 }
 
 pub fn read_f32(reader: &mut impl Read) -> Result<f32> {
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;
-    Ok(f32::from_be_bytes(buf))
+    let bits = u32::from_be_bytes(buf);
+    if bits == 0x7fc0_0000 {
+        Ok(f32::NAN)
+    } else {
+        Ok(f32::from_bits(bits))
+    }
 }
 
 pub fn write_f64(writer: &mut impl Write, value: f64) -> Result<()> {
-    writer.write_all(&value.to_be_bytes())?;
+    let bits = if value.is_nan() {
+        // The standard Java/JDK "Quiet NaN" pattern
+        0x7ff8_0000_0000_0000u64
+    } else {
+        value.to_bits()
+    };
+    writer.write_all(&bits.to_be_bytes())?;
     Ok(())
 }
 
 pub fn read_f64(reader: &mut impl Read) -> Result<f64> {
     let mut buf = [0u8; 8];
     reader.read_exact(&mut buf)?;
-    Ok(f64::from_be_bytes(buf))
+    let bits = u64::from_be_bytes(buf);
+    if bits == 0x7ff8_0000_0000_0000 {
+        Ok(f64::NAN)
+    } else {
+        Ok(f64::from_bits(bits))
+    }
 }
 
 pub fn write_bool(writer: &mut impl Write, value: bool) -> Result<()> {
@@ -424,7 +445,15 @@ mod tests {
 
     #[test]
     fn f32_round_trip() {
-        for value in [0.0f32, 1.0, -1.0, f32::MIN, f32::MAX, f32::INFINITY, f32::NEG_INFINITY] {
+        for value in [
+            0.0f32,
+            1.0,
+            -1.0,
+            f32::MIN,
+            f32::MAX,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
             let mut buf = Vec::new();
             write_f32(&mut buf, value).unwrap();
             let mut cursor = Cursor::new(&buf);

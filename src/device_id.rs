@@ -8,10 +8,10 @@
 // In Rust, Vec<String> owns its data and Drop handles cleanup — no
 // explicit delete calls, no risk of use-after-free.
 
-use std::fmt;
 use crate::error::Result;
 use crate::path::parse_path;
 use crate::serialize;
+use std::fmt;
 
 /// A device identifier consisting of dot-separated path segments.
 ///
@@ -51,6 +51,8 @@ impl DeviceId {
     /// Parse a dot-separated path string into a DeviceId.
     ///
     /// Uses the hand-written path parser (replaces C++ ANTLR4 runtime).
+    ///
+
     pub fn parse(path: &str) -> Result<Self> {
         let segments = parse_path(path)?;
         Ok(Self { segments })
@@ -86,6 +88,14 @@ impl DeviceId {
         Ok(Self { segments })
     }
 }
+
+// TODO: c++ implementation split_device_id_string function missing,
+// count the total segments and group the path
+// "root.a.b.c" -> {"root.a.b", "c"}
+// "root.a.b.c.d" -> {"root.a.b", "c", "d"}
+// "root.a" -> {"root", "a"}
+// "root.a.b" -> {"root.a", "b"}
+// "root" -> {"root"}
 
 /// Display as the dot-joined path, matching the canonical string form.
 impl fmt::Display for DeviceId {

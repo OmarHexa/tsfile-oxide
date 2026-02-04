@@ -11,10 +11,10 @@
 // The serialize/deserialize methods write fields in a fixed order matching
 // the C++ on-disk format for binary compatibility.
 
-use std::io::{Read, Write};
 use crate::error::Result;
 use crate::serialize;
 use crate::types::TSDataType;
+use std::io::{Read, Write};
 
 /// Per-chunk or per-page statistics, parameterized by data type.
 ///
@@ -81,6 +81,7 @@ pub enum Statistic {
         first: Vec<u8>,
         last: Vec<u8>,
     },
+    // TODO: Statistics for other data types (String).
 }
 
 impl Statistic {
@@ -89,28 +90,59 @@ impl Statistic {
     pub fn new(data_type: TSDataType) -> Self {
         match data_type {
             TSDataType::Boolean => Statistic::Boolean {
-                count: 0, start_time: i64::MAX, end_time: i64::MIN,
-                first: false, last: false, sum: 0,
+                count: 0,
+                start_time: i64::MAX,
+                end_time: i64::MIN,
+                first: false,
+                last: false,
+                sum: 0,
             },
             TSDataType::Int32 => Statistic::Int32 {
-                count: 0, start_time: i64::MAX, end_time: i64::MIN,
-                min: i32::MAX, max: i32::MIN, first: 0, last: 0, sum: 0.0,
+                count: 0,
+                start_time: i64::MAX,
+                end_time: i64::MIN,
+                min: i32::MAX,
+                max: i32::MIN,
+                first: 0,
+                last: 0,
+                sum: 0.0,
             },
             TSDataType::Int64 => Statistic::Int64 {
-                count: 0, start_time: i64::MAX, end_time: i64::MIN,
-                min: i64::MAX, max: i64::MIN, first: 0, last: 0, sum: 0.0,
+                count: 0,
+                start_time: i64::MAX,
+                end_time: i64::MIN,
+                min: i64::MAX,
+                max: i64::MIN,
+                first: 0,
+                last: 0,
+                sum: 0.0,
             },
             TSDataType::Float => Statistic::Float {
-                count: 0, start_time: i64::MAX, end_time: i64::MIN,
-                min: f32::MAX, max: f32::MIN, first: 0.0, last: 0.0, sum: 0.0,
+                count: 0,
+                start_time: i64::MAX,
+                end_time: i64::MIN,
+                min: f32::MAX,
+                max: f32::MIN,
+                first: 0.0,
+                last: 0.0,
+                sum: 0.0,
             },
             TSDataType::Double => Statistic::Double {
-                count: 0, start_time: i64::MAX, end_time: i64::MIN,
-                min: f64::MAX, max: f64::MIN, first: 0.0, last: 0.0, sum: 0.0,
+                count: 0,
+                start_time: i64::MAX,
+                end_time: i64::MIN,
+                min: f64::MAX,
+                max: f64::MIN,
+                first: 0.0,
+                last: 0.0,
+                sum: 0.0,
             },
-            TSDataType::Text => Statistic::Text {
-                count: 0, start_time: i64::MAX, end_time: i64::MIN,
-                first: Vec::new(), last: Vec::new(),
+            TSDataType::Text | TSDataType::String => Statistic::Text {
+                count: 0,
+                start_time: i64::MAX,
+                end_time: i64::MIN,
+                first: Vec::new(),
+                last: Vec::new(),
             },
         }
     }
@@ -170,7 +202,15 @@ impl Statistic {
     // -----------------------------------------------------------------------
 
     pub fn update_bool(&mut self, timestamp: i64, value: bool) {
-        if let Statistic::Boolean { count, start_time, end_time, first, last, sum } = self {
+        if let Statistic::Boolean {
+            count,
+            start_time,
+            end_time,
+            first,
+            last,
+            sum,
+        } = self
+        {
             if *count == 0 {
                 *first = value;
                 *start_time = timestamp;
@@ -183,67 +223,130 @@ impl Statistic {
     }
 
     pub fn update_i32(&mut self, timestamp: i64, value: i32) {
-        if let Statistic::Int32 { count, start_time, end_time, min, max, first, last, sum } = self {
+        if let Statistic::Int32 {
+            count,
+            start_time,
+            end_time,
+            min,
+            max,
+            first,
+            last,
+            sum,
+        } = self
+        {
             if *count == 0 {
                 *first = value;
                 *start_time = timestamp;
             }
             *last = value;
             *end_time = timestamp;
-            if value < *min { *min = value; }
-            if value > *max { *max = value; }
+            if value < *min {
+                *min = value;
+            }
+            if value > *max {
+                *max = value;
+            }
             *sum += value as f64;
             *count += 1;
         }
     }
 
     pub fn update_i64(&mut self, timestamp: i64, value: i64) {
-        if let Statistic::Int64 { count, start_time, end_time, min, max, first, last, sum } = self {
+        if let Statistic::Int64 {
+            count,
+            start_time,
+            end_time,
+            min,
+            max,
+            first,
+            last,
+            sum,
+        } = self
+        {
             if *count == 0 {
                 *first = value;
                 *start_time = timestamp;
             }
             *last = value;
             *end_time = timestamp;
-            if value < *min { *min = value; }
-            if value > *max { *max = value; }
+            if value < *min {
+                *min = value;
+            }
+            if value > *max {
+                *max = value;
+            }
             *sum += value as f64;
             *count += 1;
         }
     }
 
     pub fn update_f32(&mut self, timestamp: i64, value: f32) {
-        if let Statistic::Float { count, start_time, end_time, min, max, first, last, sum } = self {
+        if let Statistic::Float {
+            count,
+            start_time,
+            end_time,
+            min,
+            max,
+            first,
+            last,
+            sum,
+        } = self
+        {
             if *count == 0 {
                 *first = value;
                 *start_time = timestamp;
             }
             *last = value;
             *end_time = timestamp;
-            if value < *min { *min = value; }
-            if value > *max { *max = value; }
+            if value < *min {
+                *min = value;
+            }
+            if value > *max {
+                *max = value;
+            }
             *sum += value as f64;
             *count += 1;
         }
     }
 
     pub fn update_f64(&mut self, timestamp: i64, value: f64) {
-        if let Statistic::Double { count, start_time, end_time, min, max, first, last, sum } = self {
+        if let Statistic::Double {
+            count,
+            start_time,
+            end_time,
+            min,
+            max,
+            first,
+            last,
+            sum,
+        } = self
+        {
             if *count == 0 {
                 *first = value;
                 *start_time = timestamp;
             }
             *last = value;
             *end_time = timestamp;
-            if value < *min { *min = value; }
-            if value > *max { *max = value; }
+            if value < *min {
+                *min = value;
+            }
+            if value > *max {
+                *max = value;
+            }
             *sum += value;
             *count += 1;
         }
     }
 
     pub fn update_text(&mut self, timestamp: i64, value: &[u8]) {
-        if let Statistic::Text { count, start_time, end_time, first, last } = self {
+        if let Statistic::Text {
+            count,
+            start_time,
+            end_time,
+            first,
+            last,
+        } = self
+        {
             if *count == 0 {
                 *first = value.to_vec();
                 *start_time = timestamp;
@@ -260,7 +363,14 @@ impl Statistic {
 
     pub fn serialize_to(&self, w: &mut impl Write) -> Result<()> {
         match self {
-            Statistic::Boolean { count, start_time, end_time, first, last, sum } => {
+            Statistic::Boolean {
+                count,
+                start_time,
+                end_time,
+                first,
+                last,
+                sum,
+            } => {
                 serialize::write_var_u64(w, *count)?;
                 serialize::write_i64(w, *start_time)?;
                 serialize::write_i64(w, *end_time)?;
@@ -268,7 +378,16 @@ impl Statistic {
                 serialize::write_bool(w, *last)?;
                 serialize::write_i64(w, *sum)?;
             }
-            Statistic::Int32 { count, start_time, end_time, min, max, first, last, sum } => {
+            Statistic::Int32 {
+                count,
+                start_time,
+                end_time,
+                min,
+                max,
+                first,
+                last,
+                sum,
+            } => {
                 serialize::write_var_u64(w, *count)?;
                 serialize::write_i64(w, *start_time)?;
                 serialize::write_i64(w, *end_time)?;
@@ -278,7 +397,16 @@ impl Statistic {
                 serialize::write_i32(w, *last)?;
                 serialize::write_f64(w, *sum)?;
             }
-            Statistic::Int64 { count, start_time, end_time, min, max, first, last, sum } => {
+            Statistic::Int64 {
+                count,
+                start_time,
+                end_time,
+                min,
+                max,
+                first,
+                last,
+                sum,
+            } => {
                 serialize::write_var_u64(w, *count)?;
                 serialize::write_i64(w, *start_time)?;
                 serialize::write_i64(w, *end_time)?;
@@ -288,7 +416,16 @@ impl Statistic {
                 serialize::write_i64(w, *last)?;
                 serialize::write_f64(w, *sum)?;
             }
-            Statistic::Float { count, start_time, end_time, min, max, first, last, sum } => {
+            Statistic::Float {
+                count,
+                start_time,
+                end_time,
+                min,
+                max,
+                first,
+                last,
+                sum,
+            } => {
                 serialize::write_var_u64(w, *count)?;
                 serialize::write_i64(w, *start_time)?;
                 serialize::write_i64(w, *end_time)?;
@@ -298,7 +435,16 @@ impl Statistic {
                 serialize::write_f32(w, *last)?;
                 serialize::write_f64(w, *sum)?;
             }
-            Statistic::Double { count, start_time, end_time, min, max, first, last, sum } => {
+            Statistic::Double {
+                count,
+                start_time,
+                end_time,
+                min,
+                max,
+                first,
+                last,
+                sum,
+            } => {
                 serialize::write_var_u64(w, *count)?;
                 serialize::write_i64(w, *start_time)?;
                 serialize::write_i64(w, *end_time)?;
@@ -308,7 +454,13 @@ impl Statistic {
                 serialize::write_f64(w, *last)?;
                 serialize::write_f64(w, *sum)?;
             }
-            Statistic::Text { count, start_time, end_time, first, last } => {
+            Statistic::Text {
+                count,
+                start_time,
+                end_time,
+                first,
+                last,
+            } => {
                 serialize::write_var_u64(w, *count)?;
                 serialize::write_i64(w, *start_time)?;
                 serialize::write_i64(w, *end_time)?;
@@ -330,7 +482,14 @@ impl Statistic {
                 let first = serialize::read_bool(r)?;
                 let last = serialize::read_bool(r)?;
                 let sum = serialize::read_i64(r)?;
-                Ok(Statistic::Boolean { count, start_time, end_time, first, last, sum })
+                Ok(Statistic::Boolean {
+                    count,
+                    start_time,
+                    end_time,
+                    first,
+                    last,
+                    sum,
+                })
             }
             TSDataType::Int32 => {
                 let count = serialize::read_var_u64(r)?;
@@ -341,7 +500,16 @@ impl Statistic {
                 let first = serialize::read_i32(r)?;
                 let last = serialize::read_i32(r)?;
                 let sum = serialize::read_f64(r)?;
-                Ok(Statistic::Int32 { count, start_time, end_time, min, max, first, last, sum })
+                Ok(Statistic::Int32 {
+                    count,
+                    start_time,
+                    end_time,
+                    min,
+                    max,
+                    first,
+                    last,
+                    sum,
+                })
             }
             TSDataType::Int64 => {
                 let count = serialize::read_var_u64(r)?;
@@ -352,7 +520,16 @@ impl Statistic {
                 let first = serialize::read_i64(r)?;
                 let last = serialize::read_i64(r)?;
                 let sum = serialize::read_f64(r)?;
-                Ok(Statistic::Int64 { count, start_time, end_time, min, max, first, last, sum })
+                Ok(Statistic::Int64 {
+                    count,
+                    start_time,
+                    end_time,
+                    min,
+                    max,
+                    first,
+                    last,
+                    sum,
+                })
             }
             TSDataType::Float => {
                 let count = serialize::read_var_u64(r)?;
@@ -363,7 +540,16 @@ impl Statistic {
                 let first = serialize::read_f32(r)?;
                 let last = serialize::read_f32(r)?;
                 let sum = serialize::read_f64(r)?;
-                Ok(Statistic::Float { count, start_time, end_time, min, max, first, last, sum })
+                Ok(Statistic::Float {
+                    count,
+                    start_time,
+                    end_time,
+                    min,
+                    max,
+                    first,
+                    last,
+                    sum,
+                })
             }
             TSDataType::Double => {
                 let count = serialize::read_var_u64(r)?;
@@ -374,15 +560,30 @@ impl Statistic {
                 let first = serialize::read_f64(r)?;
                 let last = serialize::read_f64(r)?;
                 let sum = serialize::read_f64(r)?;
-                Ok(Statistic::Double { count, start_time, end_time, min, max, first, last, sum })
+                Ok(Statistic::Double {
+                    count,
+                    start_time,
+                    end_time,
+                    min,
+                    max,
+                    first,
+                    last,
+                    sum,
+                })
             }
-            TSDataType::Text => {
+            TSDataType::Text | TSDataType::String => {
                 let count = serialize::read_var_u64(r)?;
                 let start_time = serialize::read_i64(r)?;
                 let end_time = serialize::read_i64(r)?;
                 let first = serialize::read_bytes(r)?;
                 let last = serialize::read_bytes(r)?;
-                Ok(Statistic::Text { count, start_time, end_time, first, last })
+                Ok(Statistic::Text {
+                    count,
+                    start_time,
+                    end_time,
+                    first,
+                    last,
+                })
             }
         }
     }
@@ -400,8 +601,14 @@ mod tests {
 
     #[test]
     fn new_statistic_is_empty() {
-        for dt in [TSDataType::Boolean, TSDataType::Int32, TSDataType::Int64,
-                    TSDataType::Float, TSDataType::Double, TSDataType::Text] {
+        for dt in [
+            TSDataType::Boolean,
+            TSDataType::Int32,
+            TSDataType::Int64,
+            TSDataType::Float,
+            TSDataType::Double,
+            TSDataType::Text,
+        ] {
             let stat = Statistic::new(dt);
             assert!(stat.is_empty());
             assert_eq!(stat.count(), 0);
@@ -419,7 +626,10 @@ mod tests {
         assert_eq!(stat.count(), 3);
         assert_eq!(stat.start_time(), 100);
         assert_eq!(stat.end_time(), 300);
-        if let Statistic::Boolean { first, last, sum, .. } = &stat {
+        if let Statistic::Boolean {
+            first, last, sum, ..
+        } = &stat
+        {
             assert_eq!(*first, true);
             assert_eq!(*last, true);
             assert_eq!(*sum, 2); // two true values
@@ -438,7 +648,15 @@ mod tests {
         assert_eq!(stat.count(), 3);
         assert_eq!(stat.start_time(), 10);
         assert_eq!(stat.end_time(), 30);
-        if let Statistic::Int32 { min, max, first, last, sum, .. } = &stat {
+        if let Statistic::Int32 {
+            min,
+            max,
+            first,
+            last,
+            sum,
+            ..
+        } = &stat
+        {
             assert_eq!(*min, -3);
             assert_eq!(*max, 10);
             assert_eq!(*first, 5);
@@ -456,7 +674,14 @@ mod tests {
         stat.update_i64(2, i64::MAX);
 
         assert_eq!(stat.count(), 2);
-        if let Statistic::Int64 { min, max, first, last, .. } = &stat {
+        if let Statistic::Int64 {
+            min,
+            max,
+            first,
+            last,
+            ..
+        } = &stat
+        {
             assert_eq!(*min, i64::MIN);
             assert_eq!(*max, i64::MAX);
             assert_eq!(*first, i64::MIN);
@@ -473,7 +698,15 @@ mod tests {
         stat.update_f32(2, -0.5);
         stat.update_f32(3, 3.0);
 
-        if let Statistic::Float { min, max, first, last, sum, .. } = &stat {
+        if let Statistic::Float {
+            min,
+            max,
+            first,
+            last,
+            sum,
+            ..
+        } = &stat
+        {
             assert_eq!(*min, -0.5);
             assert_eq!(*max, 3.0);
             assert_eq!(*first, 1.5);
@@ -519,7 +752,14 @@ mod tests {
         let mut stat = Statistic::new(TSDataType::Int32);
         stat.update_i32(42, 7);
 
-        if let Statistic::Int32 { first, last, min, max, .. } = &stat {
+        if let Statistic::Int32 {
+            first,
+            last,
+            min,
+            max,
+            ..
+        } = &stat
+        {
             assert_eq!(*first, 7);
             assert_eq!(*last, 7);
             assert_eq!(*min, 7);
@@ -607,8 +847,14 @@ mod tests {
 
     #[test]
     fn serialize_empty_statistic_round_trip() {
-        for dt in [TSDataType::Boolean, TSDataType::Int32, TSDataType::Int64,
-                    TSDataType::Float, TSDataType::Double, TSDataType::Text] {
+        for dt in [
+            TSDataType::Boolean,
+            TSDataType::Int32,
+            TSDataType::Int64,
+            TSDataType::Float,
+            TSDataType::Double,
+            TSDataType::Text,
+        ] {
             let stat = Statistic::new(dt);
             let decoded = serialize_round_trip(&stat);
             assert_eq!(stat, decoded);
