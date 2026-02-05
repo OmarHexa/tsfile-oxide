@@ -68,8 +68,8 @@ impl Config {
     /// - Float/Double: PLAIN, TS_2DIFF, GORILLA, SPRINTZ
     /// - Text: PLAIN, DICTIONARY
     pub fn set_datatype_encoding(&mut self, data_type: u8, encoding: u8) -> Result<()> {
-        let data_type: TSDataType = data_type.try_into().expect("Invalid data type");
-        let encoding: TSEncoding = encoding.try_into().expect("Invalid encoding");
+        let data_type: TSDataType = data_type.try_into()?;
+        let encoding: TSEncoding = encoding.try_into()?;
         match data_type {
             TSDataType::Boolean => {
                 if encoding != TSEncoding::Plain {
@@ -236,30 +236,34 @@ mod tests {
     fn test_set_datatype_encoding_boolean() {
         let mut cfg = Config::default();
 
-        // Boolean only supports PLAIN
-        assert!(cfg.set_datatype_encoding(0u8, 0u8).is_ok());
+        // Boolean only supports PLAIN (0)
+        assert!(cfg.set_datatype_encoding(0u8, 0u8).is_ok()); // Plain
         assert_eq!(cfg.boolean_encoding_type, TSEncoding::Plain);
 
-        // All other encodings should fail
-        assert!(cfg.set_datatype_encoding(0u8, 1u8).is_err());
-        assert!(cfg.set_datatype_encoding(0u8, 2u8).is_err());
-        assert!(cfg.set_datatype_encoding(0u8, 6u8).is_err());
+        // All other valid encodings should fail for Boolean
+        assert!(cfg.set_datatype_encoding(0u8, 1u8).is_err()); // Dictionary
+        assert!(cfg.set_datatype_encoding(0u8, 2u8).is_err()); // Rle
+        assert!(cfg.set_datatype_encoding(0u8, 4u8).is_err()); // Ts2Diff
+        assert!(cfg.set_datatype_encoding(0u8, 8u8).is_err()); // Gorilla
+
+        // Invalid encoding byte returns Err (not panic)
+        assert!(cfg.set_datatype_encoding(0u8, 3u8).is_err()); // 3 is not a valid TSEncoding
     }
 
     #[test]
     fn test_set_datatype_encoding_int64() {
         let mut cfg = Config::default();
 
-        // Int64 supports: PLAIN, TS_2DIFF, GORILLA, ZIGZAG, RLE, SPRINTZ
-        assert!(cfg.set_datatype_encoding(2u8, 0u8).is_ok());
-        assert!(cfg.set_datatype_encoding(2u8, 1u8).is_ok());
-        assert!(cfg.set_datatype_encoding(2u8, 2u8).is_ok());
-        assert!(cfg.set_datatype_encoding(2u8, 3u8).is_ok());
-        assert!(cfg.set_datatype_encoding(2u8, 4u8).is_ok());
-        assert!(cfg.set_datatype_encoding(2u8, 5u8).is_ok());
+        // Int64 supports: PLAIN(0), RLE(2), TS_2DIFF(4), GORILLA(8), ZIGZAG(16), SPRINTZ(32)
+        assert!(cfg.set_datatype_encoding(2u8, 0u8).is_ok());  // Plain
+        assert!(cfg.set_datatype_encoding(2u8, 2u8).is_ok());  // Rle
+        assert!(cfg.set_datatype_encoding(2u8, 4u8).is_ok());  // Ts2Diff
+        assert!(cfg.set_datatype_encoding(2u8, 8u8).is_ok());  // Gorilla
+        assert!(cfg.set_datatype_encoding(2u8, 16u8).is_ok()); // Zigzag
+        assert!(cfg.set_datatype_encoding(2u8, 32u8).is_ok()); // Sprintz
         assert_eq!(cfg.int64_encoding_type, TSEncoding::Sprintz);
 
-        // Dictionary should fail
+        // Dictionary(1) should fail for Int64
         assert!(cfg.set_datatype_encoding(2u8, 1u8).is_err());
     }
 
@@ -267,33 +271,33 @@ mod tests {
     fn test_set_datatype_encoding_float() {
         let mut cfg = Config::default();
 
-        // Float supports: PLAIN, TS_2DIFF, GORILLA, SPRINTZ
-        assert!(cfg.set_datatype_encoding(3u8, 0u8).is_ok());
-        assert!(cfg.set_datatype_encoding(3u8, 1u8).is_ok());
-        assert!(cfg.set_datatype_encoding(3u8, 2u8).is_ok());
-        assert!(cfg.set_datatype_encoding(3u8, 5u8).is_ok());
+        // Float supports: PLAIN(0), TS_2DIFF(4), GORILLA(8), SPRINTZ(32)
+        assert!(cfg.set_datatype_encoding(3u8, 0u8).is_ok());  // Plain
+        assert!(cfg.set_datatype_encoding(3u8, 4u8).is_ok());  // Ts2Diff
+        assert!(cfg.set_datatype_encoding(3u8, 8u8).is_ok());  // Gorilla
+        assert!(cfg.set_datatype_encoding(3u8, 32u8).is_ok()); // Sprintz
         assert_eq!(cfg.float_encoding_type, TSEncoding::Sprintz);
 
-        // ZIGZAG, RLE, Dictionary should fail
-        assert!(cfg.set_datatype_encoding(3u8, 3u8).is_err());
-        assert!(cfg.set_datatype_encoding(3u8, 4u8).is_err());
-        assert!(cfg.set_datatype_encoding(3u8, 6u8).is_err());
+        // ZIGZAG(16), RLE(2), Dictionary(1) should fail for Float
+        assert!(cfg.set_datatype_encoding(3u8, 16u8).is_err());
+        assert!(cfg.set_datatype_encoding(3u8, 2u8).is_err());
+        assert!(cfg.set_datatype_encoding(3u8, 1u8).is_err());
     }
 
     #[test]
     fn test_set_datatype_encoding_double() {
         let mut cfg = Config::default();
 
-        // Double supports: PLAIN, TS_2DIFF, GORILLA, SPRINTZ
-        assert!(cfg.set_datatype_encoding(4u8, 0u8).is_ok());
-        assert!(cfg.set_datatype_encoding(4u8, 1u8).is_ok());
-        assert!(cfg.set_datatype_encoding(4u8, 2u8).is_ok());
-        assert!(cfg.set_datatype_encoding(4u8, 5u8).is_ok());
+        // Double supports: PLAIN(0), TS_2DIFF(4), GORILLA(8), SPRINTZ(32)
+        assert!(cfg.set_datatype_encoding(4u8, 0u8).is_ok());  // Plain
+        assert!(cfg.set_datatype_encoding(4u8, 4u8).is_ok());  // Ts2Diff
+        assert!(cfg.set_datatype_encoding(4u8, 8u8).is_ok());  // Gorilla
+        assert!(cfg.set_datatype_encoding(4u8, 32u8).is_ok()); // Sprintz
         assert_eq!(cfg.double_encoding_type, TSEncoding::Sprintz);
 
-        // ZIGZAG, RLE, Dictionary should fail
-        assert!(cfg.set_datatype_encoding(4u8, 3u8).is_err());
-        assert!(cfg.set_datatype_encoding(4u8, 4u8).is_err());
-        assert!(cfg.set_datatype_encoding(4u8, 6u8).is_err());
+        // ZIGZAG(16), RLE(2), Dictionary(1) should fail for Double
+        assert!(cfg.set_datatype_encoding(4u8, 16u8).is_err());
+        assert!(cfg.set_datatype_encoding(4u8, 2u8).is_err());
+        assert!(cfg.set_datatype_encoding(4u8, 1u8).is_err());
     }
 }

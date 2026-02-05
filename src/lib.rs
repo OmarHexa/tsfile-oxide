@@ -14,6 +14,7 @@ pub mod config;
 pub mod device_id;
 pub mod error;
 pub mod path;
+pub mod record;
 pub mod schema;
 pub mod serialize;
 pub mod statistic;

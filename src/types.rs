@@ -153,7 +153,8 @@ mod tests {
 
     #[test]
     fn data_type_try_from_invalid() {
-        assert!(TSDataType::try_from(6).is_err());
+        // 0-6 are valid (Boolean through String); 7+ are invalid
+        assert!(TSDataType::try_from(7).is_err());
         assert!(TSDataType::try_from(255).is_err());
     }
 
