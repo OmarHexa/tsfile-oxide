@@ -51,6 +51,6 @@ mod utils;
 pub mod encoder;
 pub mod decoder;
 
-// Re-exports will be added after Encoder/Decoder enums are implemented
-// pub use encoder::Encoder;
-// pub use decoder::Decoder;
+// Re-export unified encoder/decoder enums for external use
+pub use encoder::Encoder;
+pub use decoder::Decoder;
