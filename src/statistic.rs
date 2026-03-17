@@ -592,6 +592,105 @@ impl Statistic {
     pub fn reset(&mut self) {
         *self = Statistic::new(self.data_type());
     }
+
+    /// Merge another Statistic into this one, extending the time range and
+    /// updating aggregate fields.
+    ///
+    /// Used by TsFileIOWriter when building a TimeseriesIndex that spans
+    /// multiple ChunkMeta entries: the merged statistic covers all chunks.
+    /// `self` is assumed to have chronologically earlier data than `other`.
+    pub fn merge(&mut self, other: &Statistic) {
+        if other.is_empty() {
+            return;
+        }
+        match (self, other) {
+            (
+                Statistic::Boolean { count, start_time, end_time, last, sum, .. },
+                Statistic::Boolean {
+                    count: oc, start_time: os, end_time: oe, last: ol, sum: osum, ..
+                },
+            ) => {
+                *count += oc;
+                *start_time = (*start_time).min(*os);
+                *end_time = (*end_time).max(*oe);
+                *last = *ol;
+                *sum += osum;
+            }
+            (
+                Statistic::Int32 { count, start_time, end_time, min, max, last, sum, .. },
+                Statistic::Int32 {
+                    count: oc, start_time: os, end_time: oe,
+                    min: omin, max: omax, last: ol, sum: osum, ..
+                },
+            ) => {
+                *count += oc;
+                *start_time = (*start_time).min(*os);
+                *end_time = (*end_time).max(*oe);
+                *min = (*min).min(*omin);
+                *max = (*max).max(*omax);
+                *last = *ol;
+                *sum += osum;
+            }
+            (
+                Statistic::Int64 { count, start_time, end_time, min, max, last, sum, .. },
+                Statistic::Int64 {
+                    count: oc, start_time: os, end_time: oe,
+                    min: omin, max: omax, last: ol, sum: osum, ..
+                },
+            ) => {
+                *count += oc;
+                *start_time = (*start_time).min(*os);
+                *end_time = (*end_time).max(*oe);
+                *min = (*min).min(*omin);
+                *max = (*max).max(*omax);
+                *last = *ol;
+                *sum += osum;
+            }
+            (
+                Statistic::Float { count, start_time, end_time, min, max, last, sum, .. },
+                Statistic::Float {
+                    count: oc, start_time: os, end_time: oe,
+                    min: omin, max: omax, last: ol, sum: osum, ..
+                },
+            ) => {
+                *count += oc;
+                *start_time = (*start_time).min(*os);
+                *end_time = (*end_time).max(*oe);
+                if omin < min { *min = *omin; }
+                if omax > max { *max = *omax; }
+                *last = *ol;
+                *sum += osum;
+            }
+            (
+                Statistic::Double { count, start_time, end_time, min, max, last, sum, .. },
+                Statistic::Double {
+                    count: oc, start_time: os, end_time: oe,
+                    min: omin, max: omax, last: ol, sum: osum, ..
+                },
+            ) => {
+                *count += oc;
+                *start_time = (*start_time).min(*os);
+                *end_time = (*end_time).max(*oe);
+                if omin < min { *min = *omin; }
+                if omax > max { *max = *omax; }
+                *last = *ol;
+                *sum += osum;
+            }
+            (
+                Statistic::Text { count, start_time, end_time, last, .. },
+                Statistic::Text {
+                    count: oc, start_time: os, end_time: oe, last: ol, ..
+                },
+            ) => {
+                *count += oc;
+                *start_time = (*start_time).min(*os);
+                *end_time = (*end_time).max(*oe);
+                *last = ol.clone();
+            }
+            // Type mismatch: ignore the merge (should not happen in valid files).
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
