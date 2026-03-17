@@ -636,6 +636,17 @@ Uses `cbindgen` to auto-generate `tsfile.h` from Rust `extern "C"` functions. Op
 
 **Milestone 3:** Can write valid TsFile header + footer. All format struct serialization matches C++.
 
+> **⚠ Known format deviation (must reconcile in Phase 5):**
+> `TsFileIOWriter` appends a 4-byte `ts_meta_size: u32 BE` field immediately
+> before the 14-byte footer (`[meta_offset i64][magic 6]`). This lets
+> `TsFileIOReader` locate `TsFileMeta` by reading backwards without forward-
+> scanning. The C++ reader does not expect these 4 bytes. Before binary
+> compatibility testing in Phase 5, investigate how the C++ reader actually
+> locates `TsFileMeta` (likely by storing the root `MetaIndexNode` offset
+> inside `TsFileMeta`, or by a different footer layout) and align this
+> implementation with that approach. Until then, Rust-written files are not
+> readable by the C++ reader and vice versa.
+
 ### Phase 4: Writer Pipeline
 20. `tsfile-writer/page_writer.rs` — PageWriter
 21. `tsfile-writer/chunk_writer.rs` — ChunkWriter

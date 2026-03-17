@@ -58,7 +58,7 @@ impl Int32Packer {
         }
 
         // Determine bits needed (based on max value)
-        let max_value = *self.values.iter().max().unwrap();
+        let max_value = *self.values.iter().max().unwrap(); // TODO: are we sure we want to unwrap here?
         let bits_per_value = if max_value == 0 {
             0
         } else {
@@ -232,7 +232,8 @@ impl Int64Packer {
             return Ok(());
         }
 
-        let max_value = *self.values.iter().max().unwrap();
+        let max_value = *self.values.iter().max().unwrap(); // TODO: are your sure we want to
+        // unwrap 
         let bits_per_value = if max_value == 0 {
             0
         } else {
@@ -258,7 +259,7 @@ impl Int64Packer {
         let mut bits_in_buffer = 0u32;
 
         for &value in &self.values {
-            let mask = if bits_per_value >= 64 {
+            let mask = if bits_per_value == 64 {
                 u64::MAX
             } else {
                 (1u64 << bits_per_value) - 1
