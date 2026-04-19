@@ -25,7 +25,7 @@ pub use result_set::ResultSet;
 pub use row_record::RowRecord;
 pub use scan_iterator::{AlignedSeriesScan, SeriesScanIterator};
 pub use tsblock::{Column, ColumnMeta, TsBlock};
-// pub use tsfile_reader::TsFileReader;
+pub use tsfile_reader::TsFileReader;
 
 #[cfg(test)]
 pub(crate) mod test_fixtures;
