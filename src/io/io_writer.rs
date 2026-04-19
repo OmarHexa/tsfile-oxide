@@ -20,10 +20,10 @@ use crate::schema::TableSchema;
 use crate::serialize;
 use crate::statistic::Statistic;
 use crate::tsfile_format::{
-    ChunkGroupMeta, ChunkHeader, ChunkMeta, MetaIndexEntry, MetaIndexNode, MetaIndexNodeType,
-    TimeseriesIndex, TsFileMeta, CHUNK_GROUP_FOOTER_MARKER, CHUNK_TYPE_ALIGNED_TIME_MASK,
-    CHUNK_TYPE_ALIGNED_VALUE_MASK, CHUNK_TYPE_NON_ALIGNED_MASK, SEPARATOR_MARKER, TIME_CHUNK_HEADER_MARKER,
-    TSFILE_MAGIC, VALUE_CHUNK_HEADER_MARKER, VERSION_NUMBER,
+    CHUNK_GROUP_FOOTER_MARKER, CHUNK_TYPE_ALIGNED_TIME_MASK, CHUNK_TYPE_ALIGNED_VALUE_MASK,
+    CHUNK_TYPE_NON_ALIGNED_MASK, ChunkGroupMeta, ChunkHeader, ChunkMeta, MetaIndexEntry,
+    MetaIndexNode, MetaIndexNodeType, SEPARATOR_MARKER, TIME_CHUNK_HEADER_MARKER, TSFILE_MAGIC,
+    TimeseriesIndex, TsFileMeta, VALUE_CHUNK_HEADER_MARKER, VERSION_NUMBER,
 };
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -390,7 +390,9 @@ fn build_timeseries_index(measurement_name: String, chunks: &[ChunkMeta]) -> Tim
     debug_assert!(!chunks.is_empty());
     let data_type = chunks[0].data_type;
     let mut ts_index = TimeseriesIndex::new(measurement_name, data_type);
-    let mut merged_stat = chunks[0].statistic.clone();
+    // Initialize to empty and merge all chunks (Statistic::merge handles empty-self
+    // correctly, so no double-counting occurs regardless of iteration order).
+    let mut merged_stat = crate::statistic::Statistic::new(data_type);
     for cm in chunks {
         merged_stat.merge(&cm.statistic);
         ts_index.chunk_meta_list.push(cm.clone());
@@ -402,11 +404,11 @@ fn build_timeseries_index(measurement_name: String, chunks: &[ChunkMeta]) -> Tim
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{CompressionType, TSDataType, TSEncoding};
     use crate::tsfile_format::{
         CHUNK_HEADER_MARKER, ONLY_ONE_PAGE_CHUNK_HEADER_MARKER, TIME_CHUNK_HEADER_MARKER,
         VALUE_CHUNK_HEADER_MARKER,
     };
+    use crate::types::{CompressionType, TSDataType, TSEncoding};
     use tempfile::tempdir;
 
     fn default_config() -> Arc<Config> {

@@ -252,6 +252,7 @@ impl Statistic {
     }
 
     pub fn update_i64(&mut self, timestamp: i64, value: i64) {
+        // what happends if self is not Int64
         if let Statistic::Int64 {
             count,
             start_time,
@@ -596,6 +597,9 @@ impl Statistic {
     /// Merge another Statistic into this one, extending the time range and
     /// updating aggregate fields.
     ///
+    /// If `self` is empty (count == 0), it takes on `other`'s values entirely.
+    /// This handles the common case of merging into an initially-empty aggregate.
+    ///
     /// Used by TsFileIOWriter when building a TimeseriesIndex that spans
     /// multiple ChunkMeta entries: the merged statistic covers all chunks.
     /// `self` is assumed to have chronologically earlier data than `other`.
@@ -603,11 +607,27 @@ impl Statistic {
         if other.is_empty() {
             return;
         }
+        if self.is_empty() {
+            *self = other.clone();
+            return;
+        }
         match (self, other) {
             (
-                Statistic::Boolean { count, start_time, end_time, last, sum, .. },
                 Statistic::Boolean {
-                    count: oc, start_time: os, end_time: oe, last: ol, sum: osum, ..
+                    count,
+                    start_time,
+                    end_time,
+                    last,
+                    sum,
+                    ..
+                },
+                Statistic::Boolean {
+                    count: oc,
+                    start_time: os,
+                    end_time: oe,
+                    last: ol,
+                    sum: osum,
+                    ..
                 },
             ) => {
                 *count += oc;
@@ -617,10 +637,25 @@ impl Statistic {
                 *sum += osum;
             }
             (
-                Statistic::Int32 { count, start_time, end_time, min, max, last, sum, .. },
                 Statistic::Int32 {
-                    count: oc, start_time: os, end_time: oe,
-                    min: omin, max: omax, last: ol, sum: osum, ..
+                    count,
+                    start_time,
+                    end_time,
+                    min,
+                    max,
+                    last,
+                    sum,
+                    ..
+                },
+                Statistic::Int32 {
+                    count: oc,
+                    start_time: os,
+                    end_time: oe,
+                    min: omin,
+                    max: omax,
+                    last: ol,
+                    sum: osum,
+                    ..
                 },
             ) => {
                 *count += oc;
@@ -632,10 +667,25 @@ impl Statistic {
                 *sum += osum;
             }
             (
-                Statistic::Int64 { count, start_time, end_time, min, max, last, sum, .. },
                 Statistic::Int64 {
-                    count: oc, start_time: os, end_time: oe,
-                    min: omin, max: omax, last: ol, sum: osum, ..
+                    count,
+                    start_time,
+                    end_time,
+                    min,
+                    max,
+                    last,
+                    sum,
+                    ..
+                },
+                Statistic::Int64 {
+                    count: oc,
+                    start_time: os,
+                    end_time: oe,
+                    min: omin,
+                    max: omax,
+                    last: ol,
+                    sum: osum,
+                    ..
                 },
             ) => {
                 *count += oc;
@@ -647,39 +697,87 @@ impl Statistic {
                 *sum += osum;
             }
             (
-                Statistic::Float { count, start_time, end_time, min, max, last, sum, .. },
                 Statistic::Float {
-                    count: oc, start_time: os, end_time: oe,
-                    min: omin, max: omax, last: ol, sum: osum, ..
+                    count,
+                    start_time,
+                    end_time,
+                    min,
+                    max,
+                    last,
+                    sum,
+                    ..
+                },
+                Statistic::Float {
+                    count: oc,
+                    start_time: os,
+                    end_time: oe,
+                    min: omin,
+                    max: omax,
+                    last: ol,
+                    sum: osum,
+                    ..
                 },
             ) => {
                 *count += oc;
                 *start_time = (*start_time).min(*os);
                 *end_time = (*end_time).max(*oe);
-                if omin < min { *min = *omin; }
-                if omax > max { *max = *omax; }
+                if omin < min {
+                    *min = *omin;
+                }
+                if omax > max {
+                    *max = *omax;
+                }
                 *last = *ol;
                 *sum += osum;
             }
             (
-                Statistic::Double { count, start_time, end_time, min, max, last, sum, .. },
                 Statistic::Double {
-                    count: oc, start_time: os, end_time: oe,
-                    min: omin, max: omax, last: ol, sum: osum, ..
+                    count,
+                    start_time,
+                    end_time,
+                    min,
+                    max,
+                    last,
+                    sum,
+                    ..
+                },
+                Statistic::Double {
+                    count: oc,
+                    start_time: os,
+                    end_time: oe,
+                    min: omin,
+                    max: omax,
+                    last: ol,
+                    sum: osum,
+                    ..
                 },
             ) => {
                 *count += oc;
                 *start_time = (*start_time).min(*os);
                 *end_time = (*end_time).max(*oe);
-                if omin < min { *min = *omin; }
-                if omax > max { *max = *omax; }
+                if omin < min {
+                    *min = *omin;
+                }
+                if omax > max {
+                    *max = *omax;
+                }
                 *last = *ol;
                 *sum += osum;
             }
             (
-                Statistic::Text { count, start_time, end_time, last, .. },
                 Statistic::Text {
-                    count: oc, start_time: os, end_time: oe, last: ol, ..
+                    count,
+                    start_time,
+                    end_time,
+                    last,
+                    ..
+                },
+                Statistic::Text {
+                    count: oc,
+                    start_time: os,
+                    end_time: oe,
+                    last: ol,
+                    ..
                 },
             ) => {
                 *count += oc;

@@ -40,6 +40,7 @@ pub mod io;
 // === Writer module (Phase 4) ===
 // Replaces C++ src/writer/ (19 files).
 // Pipeline: TsFileWriter -> ChunkWriter -> PageWriter -> Encoder -> Compressor -> disk
+pub mod tablet;
 pub mod writer;
 
 // === Reader module (Phase 5) ===
