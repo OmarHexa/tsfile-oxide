@@ -59,7 +59,25 @@ impl<'a> ResultSet<'a> {
 
     pub fn column_meta(&self) -> &[ColumnMeta] { &self.column_meta }
 
+    /// Pull the next TsBlock from the underlying scanner.
+    ///
+    /// Do NOT interleave with `Iterator::next` on the same ResultSet: once
+    /// `Iterator::next` has consumed some rows of a block, any remaining
+    /// rows in that block are not yielded by a subsequent `next_block`
+    /// call. The debug_assert below catches such misuse in tests.
     pub fn next_block(&mut self) -> Result<Option<TsBlock>> {
+        debug_assert!(
+            self.current_block.is_none(),
+            "next_block cannot be called while Iterator::next holds a block — \
+             the row cursor would be lost"
+        );
+        self.pull_block()
+    }
+
+    /// Internal block pull that skips the interleaving check. Used by
+    /// `Iterator::next`'s refill path, where it is valid to advance past
+    /// an exhausted `current_block` without a misuse.
+    fn pull_block(&mut self) -> Result<Option<TsBlock>> {
         match &mut self.source {
             ScanSource::Regular(it) => it.next_block(),
             ScanSource::Aligned(it) => it.next_block(),
@@ -99,9 +117,10 @@ impl<'a> Iterator for ResultSet<'a> {
             };
             if need_refill {
                 self.row_cursor = 0;
-                match self.next_block() {
+                self.current_block = None;
+                match self.pull_block() {
                     Ok(Some(b)) => self.current_block = Some(b),
-                    Ok(None)    => { self.current_block = None; return None; }
+                    Ok(None)    => return None,
                     Err(e)      => return Some(Err(e)),
                 }
             }

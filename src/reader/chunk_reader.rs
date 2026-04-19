@@ -34,15 +34,13 @@ pub struct RegularChunkReader {
     filter: Option<Arc<dyn Filter>>,
 }
 
-/// Three-variant enum matching the C++ class hierarchy (RegularChunkReader,
-/// AlignedTimeChunkReader, AlignedValueChunkReader). The set of concrete
-/// reader types is closed and known at compile time — enum dispatch instead
-/// of vtable.
-pub enum ChunkReader {
-    Regular(RegularChunkReader),
-    AlignedTime(AlignedTimeChunkReader),
-    AlignedValue(AlignedValueChunkReader),
-}
+// C++ has a ChunkReader base class with Regular + Aligned subclasses for
+// polymorphic dispatch at the scan-iterator level. In Rust the scan
+// iterators specialize: SeriesScanIterator holds a RegularChunkReader,
+// AlignedSeriesScan holds one AlignedTimeChunkReader + N AlignedValue
+// ChunkReaders. No call site needs a unified dispatch type, so we skip
+// the ChunkReader enum entirely. The three concrete struct types above
+// are the whole surface.
 
 impl RegularChunkReader {
     pub fn new(

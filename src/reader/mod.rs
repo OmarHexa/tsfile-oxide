@@ -3,7 +3,8 @@
 // differ from C++:
 //
 // 1. Filters use dyn Trait (open set) — users can define custom filters,
-//    unlike ChunkReader which uses enum (closed set, 2 variants).
+//    unlike the scan iterators, whose concrete chunk-reader types are
+//    specialised per call site.
 // 2. ResultSet implements Iterator — Rust's for-loop syntax replaces
 //    the C++ pattern of `while (result_set.next(has_next)) { ... }`.
 
@@ -17,8 +18,7 @@ pub mod scan_iterator;
 pub mod tsblock;
 pub mod tsfile_reader;
 
-// Re-enabled as each type is introduced by subsequent tasks.
-pub use chunk_reader::ChunkReader;
+pub use chunk_reader::{AlignedTimeChunkReader, AlignedValueChunkReader, RegularChunkReader};
 pub use filter::Filter;
 pub use metadata_querier::MetadataQuerier;
 pub use result_set::ResultSet;
