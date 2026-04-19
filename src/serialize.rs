@@ -43,12 +43,20 @@ pub fn write_var_u32(writer: &mut impl Write, mut value: u32) -> Result<usize> {
 }
 
 /// Read a variable-length u32. Consumes 1-5 bytes.
+///
+/// Distinguishes two failure modes:
+/// - Zero bytes read (clean EOF): returns `Io(UnexpectedEof)` so callers can
+///   treat it as a legitimate end-of-stream rather than data corruption.
+/// - At least one byte read but the sequence never terminated: returns
+///   `Corrupted("Incomplete varint")` because the input is genuinely malformed.
 pub fn read_var_u32(reader: &mut impl Read) -> Result<u32> {
     let mut result = 0u32;
     let mut shift = 0u32;
+    let mut read_any = false;
 
     for byte in reader.bytes() {
         let byte = byte?;
+        read_any = true;
         result |= ((byte & 0x7F) as u32) << shift;
         if byte & 0x80 == 0 {
             return Ok(result);
@@ -57,6 +65,12 @@ pub fn read_var_u32(reader: &mut impl Read) -> Result<u32> {
         if shift >= 35 {
             return Err(TsFileError::Corrupted("varint u32 too long".into()));
         }
+    }
+    if !read_any {
+        return Err(TsFileError::Io(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "unexpected EOF reading var_u32",
+        )));
     }
     Err(TsFileError::Corrupted("Incomplete varint".into()))
 }
@@ -81,11 +95,19 @@ pub fn write_var_u64(writer: &mut impl Write, mut value: u64) -> Result<usize> {
 }
 
 /// Read a variable-length u64. Consumes 1-10 bytes.
+///
+/// Distinguishes two failure modes:
+/// - Zero bytes read (clean EOF): returns `Io(UnexpectedEof)` so callers can
+///   treat it as a legitimate end-of-stream rather than data corruption.
+/// - At least one byte read but the sequence never terminated: returns
+///   `Corrupted("Incomplete varint")` because the input is genuinely malformed.
 pub fn read_var_u64(reader: &mut impl Read) -> Result<u64> {
     let mut result = 0u64;
     let mut shift = 0u32;
+    let mut read_any = false;
     for byte in reader.bytes() {
         let byte = byte?;
+        read_any = true;
         result |= ((byte & 0x7F) as u64) << shift;
         if byte & 0x80 == 0 {
             return Ok(result);
@@ -94,6 +116,12 @@ pub fn read_var_u64(reader: &mut impl Read) -> Result<u64> {
         if shift >= 70 {
             return Err(TsFileError::Corrupted("varint u64 too long".into()));
         }
+    }
+    if !read_any {
+        return Err(TsFileError::Io(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "unexpected EOF reading var_u64",
+        )));
     }
     Err(TsFileError::Corrupted("Incomplete varint".into()))
 }

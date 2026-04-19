@@ -116,17 +116,10 @@ fn decode_regular_page(
 }
 
 fn is_unexpected_eof(err: &TsFileError) -> bool {
-    // TsFileError::Io(UnexpectedEof) is the stop signal when decoders use
-    // read_exact (e.g. plain, gorilla). However, varint decoders (serialize::
-    // read_var_u32 / read_var_u64) return Corrupted("Incomplete varint") when
-    // the iterator over reader.bytes() is exhausted — they use for-loop
-    // iteration rather than read_exact, so no IoError is produced. We treat
-    // both as the clean end-of-stream signal.
-    match err {
-        TsFileError::Io(e) => e.kind() == std::io::ErrorKind::UnexpectedEof,
-        TsFileError::Corrupted(msg) => msg == "Incomplete varint",
-        _ => false,
-    }
+    // `serialize::read_var_u32/u64` now return `Io(UnexpectedEof)` when the
+    // stream is empty (zero bytes read), so this single arm covers both
+    // read_exact-based decoders (plain, gorilla) and varint-based decoders.
+    matches!(err, TsFileError::Io(e) if e.kind() == std::io::ErrorKind::UnexpectedEof)
 }
 
 fn decode_i64_stream(enc: TSEncoding, dt: TSDataType, bytes: &[u8]) -> Result<Vec<i64>> {
@@ -431,4 +424,10 @@ mod tests {
     // unused elsewhere.
     #[allow(dead_code)]
     fn _use_statistic(_s: Statistic) {}
+
+    #[test]
+    fn decode_i64_stream_empty_returns_empty() {
+        let result = decode_i64_stream(TIME_ENCODING, TSDataType::Int64, &[]);
+        assert_eq!(result.unwrap(), Vec::<i64>::new());
+    }
 }
