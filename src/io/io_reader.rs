@@ -404,15 +404,33 @@ pub fn read_root_node(
         if cursor.position() >= index_section_len {
             break;
         }
-        // TimeseriesIndex and MetaIndexNode both start with a fixed-size string.
-        // Parse greedily: try TimeseriesIndex first (more structured), then node.
+        // Disambiguation: MetaIndexNode and TimeseriesIndex both start with an i32,
+        // making them ambiguous from the first bytes alone. The trickiest case is
+        // a TimeseriesIndex with measurement_name="" (aligned time chunks), which
+        // looks like a 0-children MetaIndexNode with node_type = data_type byte.
+        // Specifically, TSDataType::Int64=2 = MetaIndexNodeType::InternalMeasurement,
+        // so the empty-name TimeseriesIndex for Int64 time chunks would be
+        // misidentified as a valid 0-children InternalMeasurement node.
+        //
+        // Resolution: try MetaIndexNode first (more structured), but ONLY accept
+        // if it has at least 1 child. A 0-child MetaIndexNode is never written by
+        // the writer and is a reliable sign of a false-positive parse of a
+        // TimeseriesIndex (specifically the empty-name one).
+        //
+        // INVARIANT (load-bearing): the writer never serializes a MetaIndexNode
+        // with 0 children. `start_chunk_group` / `end_chunk_group` always writes
+        // at least one ChunkMeta before sealing a node. If that invariant ever
+        // weakens (e.g., lazy index creation), this heuristic misclassifies.
         let saved = cursor.clone();
-        if TimeseriesIndex::deserialize_from(&mut cursor).is_ok() {
-            continue;
-        }
-        cursor = saved;
         if let Ok(node) = MetaIndexNode::deserialize_from(&mut cursor) {
-            last_node = Some(node);
+            if node.children.len() > 0 {
+                last_node = Some(node);
+                continue;
+            }
+            // 0-children "node" is a false positive — restore and try TimeseriesIndex.
+        }
+        cursor = saved.clone();
+        if TimeseriesIndex::deserialize_from(&mut cursor).is_ok() {
             continue;
         }
         break;

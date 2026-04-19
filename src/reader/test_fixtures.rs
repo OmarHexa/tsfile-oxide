@@ -69,3 +69,85 @@ fn build_int64_tablet(
     }
     tablet
 }
+
+// ---------------------------------------------------------------------------
+// Aligned fixtures (Task 11)
+// ---------------------------------------------------------------------------
+
+use crate::io::io_reader::TsFileIOReader;
+use crate::reader::tsblock::ColumnMeta;
+use crate::tsfile_format::{ChunkMeta, TimeseriesIndex};
+use crate::value::TsValue;
+
+/// Write an aligned tsfile with one device and two measurements
+/// ("i": Int64, "d": Double) and `n` rows where row r has timestamp r,
+/// values (r as i64, r as f64), and no nulls. Returns `(tempdir, path,
+/// device, measurement_names)` in column order.
+///
+/// We use `write_aligned_record` which requires explicit schema
+/// registration. Schemas are registered before any writes so that the
+/// value chunk writers pick up the correct data type and encoding.
+pub fn write_aligned_two_column_file(n: usize) -> (TempDir, PathBuf, DeviceId, Vec<String>) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("aligned.tsfile");
+    let device = DeviceId::parse("root.sg.aligned_d").unwrap();
+    let names = vec!["i".to_string(), "d".to_string()];
+
+    let schemas = vec![
+        MeasurementSchema::new("i".into(), TSDataType::Int64,  TSEncoding::Plain, CompressionType::Uncompressed),
+        MeasurementSchema::new("d".into(), TSDataType::Double, TSEncoding::Plain, CompressionType::Uncompressed),
+    ];
+
+    let mut w = crate::writer::tsfile_writer::TsFileWriter::new(&path, Arc::new(Config::default())).unwrap();
+    // Explicit schema registration is required for write_aligned_record — the
+    // aligned write path does not auto-register from the value slice.
+    for s in &schemas {
+        w.register_schema(&device.to_string(), s.clone());
+    }
+    for r in 0..n {
+        let t = r as i64;
+        w.write_aligned_record(
+            &device.to_string(),
+            t,
+            &[
+                ("i", Some(TsValue::Int64(t))),
+                ("d", Some(TsValue::Double(t as f64))),
+            ],
+        ).unwrap();
+    }
+    w.close().unwrap();
+
+    (dir, path, device, names)
+}
+
+/// Classify a device's TimeseriesIndex map into
+/// `(time_chunks, value_chunks, column_meta)` for the aligned reader
+/// pipeline. Time chunks live under the empty-string measurement name
+/// (the writer convention for aligned time columns). Value columns are
+/// returned in the order `value_names` specifies.
+pub fn gather_aligned_chunks(
+    io: &mut TsFileIOReader,
+    device: &DeviceId,
+    value_names: &[String],
+) -> (Vec<ChunkMeta>, Vec<Vec<ChunkMeta>>, std::sync::Arc<[ColumnMeta]>) {
+    let map = io.get_timeseries_indexes(device).unwrap();
+
+    // Time chunks live under measurement_name = "" (empty string) per
+    // the writer convention (see src/writer/time_chunk_writer.rs).
+    let time_idx: &TimeseriesIndex = map.get("")
+        .expect("aligned device must have an empty-named time TimeseriesIndex");
+    let time_chunks: Vec<ChunkMeta> = time_idx.chunk_meta_list.clone();
+
+    let mut value_chunks: Vec<Vec<ChunkMeta>> = Vec::with_capacity(value_names.len());
+    let mut column_meta: Vec<ColumnMeta> = Vec::with_capacity(value_names.len());
+    for name in value_names {
+        let idx = map.get(name).unwrap_or_else(|| panic!("missing aligned value column {name}"));
+        value_chunks.push(idx.chunk_meta_list.clone());
+        column_meta.push(ColumnMeta {
+            name: name.clone(),
+            data_type: idx.data_type,
+        });
+    }
+
+    (time_chunks, value_chunks, std::sync::Arc::from(column_meta))
+}

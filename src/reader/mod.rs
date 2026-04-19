@@ -18,12 +18,12 @@ pub mod tsblock;
 pub mod tsfile_reader;
 
 // Re-enabled as each type is introduced by subsequent tasks.
-// pub use chunk_reader::ChunkReader;
+pub use chunk_reader::ChunkReader;
 pub use filter::Filter;
 pub use metadata_querier::MetadataQuerier;
 // pub use result_set::ResultSet;
 pub use row_record::RowRecord;
-pub use scan_iterator::SeriesScanIterator; // AlignedSeriesScan added in Task 11
+pub use scan_iterator::{AlignedSeriesScan, SeriesScanIterator};
 pub use tsblock::{Column, ColumnMeta, TsBlock};
 // pub use tsfile_reader::TsFileReader;
 
