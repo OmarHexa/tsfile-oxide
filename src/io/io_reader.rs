@@ -27,8 +27,8 @@ use crate::io::bloom_filter::BloomFilter;
 use crate::io::read_file::ReadFile;
 use crate::serialize;
 use crate::tsfile_format::{
-    MetaIndexNode, MetaIndexNodeType, TimeseriesIndex, TsFileMeta, SEPARATOR_MARKER, TSFILE_MAGIC,
-    VERSION_NUMBER,
+    ChunkHeader, ChunkMeta, MetaIndexNode, MetaIndexNodeType, TimeseriesIndex, TsFileMeta,
+    SEPARATOR_MARKER, TSFILE_MAGIC, VERSION_NUMBER,
 };
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
@@ -135,6 +135,41 @@ impl TsFileIOReader {
     /// Expose the underlying ReadFile for reading chunk data by offset.
     pub fn file_mut(&mut self) -> &mut ReadFile {
         &mut self.file
+    }
+
+    /// Load one chunk's ChunkHeader and the following page payload bytes
+    /// in a single seek-and-read pass. Used by the reader pipeline to
+    /// hand a complete chunk to a ChunkReader.
+    ///
+    /// C++ TsFileSequenceReader::readMemChunk() does the same: seek to the
+    /// chunk header, deserialize it, then read data_size bytes of page data.
+    /// In Rust we avoid the intermediate ByteStream allocation and fill a
+    /// Vec<u8> directly.
+    pub fn load_chunk(&mut self, cm: &ChunkMeta) -> Result<(ChunkHeader, Vec<u8>)> {
+        // 1. Seek to the byte offset where the ChunkHeader marker lives.
+        self.file.seek_to(cm.offset_of_chunk_header as u64)?;
+
+        // 2. Deserialize the ChunkHeader (reads marker + measurement_name +
+        //    data_size + data_type + encoding + compression).
+        let header = ChunkHeader::deserialize_from(&mut self.file)?;
+
+        // 3. Sanity-check data_size against the file before allocating.
+        //    ChunkHeader::deserialize_from treats data_size as u32, so a
+        //    negative i32 on disk becomes a ~4 GiB length that would OOM
+        //    Vec::with_capacity on malformed input.
+        if header.data_size as u64 > self.file_size {
+            return Err(TsFileError::Corrupted(format!(
+                "chunk data_size {} exceeds file size {}",
+                header.data_size, self.file_size
+            )));
+        }
+
+        // 4. Read exactly header.data_size bytes — the concatenated page data
+        //    (one or more PageHeader + compressed_body pairs).
+        let mut page_bytes = vec![0u8; header.data_size as usize];
+        self.file.read_bytes(&mut page_bytes)?;
+
+        Ok((header, page_bytes))
     }
 
     // -----------------------------------------------------------------------
@@ -393,9 +428,14 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use crate::io::io_writer::TsFileIOWriter;
+    use crate::reader::chunk_reader::RegularChunkReader;
+    use crate::reader::tsblock::ColumnMeta;
+    use crate::record::TsRecord;
+    use crate::schema::MeasurementSchema;
     use crate::statistic::Statistic;
     use crate::tsfile_format::{ChunkHeader, CHUNK_HEADER_MARKER};
     use crate::types::{CompressionType, TSDataType, TSEncoding};
+    use crate::writer::tsfile_writer::TsFileWriter;
     use std::sync::Arc;
     use tempfile::tempdir;
 
@@ -473,5 +513,73 @@ mod tests {
         // Opening an empty tsfile may succeed or fail (no device nodes).
         // What matters is no panic and a meaningful error if it fails.
         let _ = result;
+    }
+
+    /// Write a real, decodable single-measurement chunk with TsFileWriter, then
+    /// open it with TsFileIOReader, call load_chunk, and verify:
+    ///   (a) the returned header has the right measurement name and data_size,
+    ///   (b) the page_bytes length equals header.data_size,
+    ///   (c) feeding (header, page_bytes) to RegularChunkReader yields a TsBlock
+    ///       whose timestamps and values match what was written.
+    #[test]
+    fn load_chunk_round_trip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("lc.tsfile");
+
+        // --- Write ---
+        let config = Arc::new(Config::default());
+        let times: Vec<i64> = vec![10, 20, 30];
+        let values: Vec<i64> = vec![100, 200, 300];
+        {
+            let mut writer = TsFileWriter::new(&path, config.clone()).unwrap();
+            writer.register_schema(
+                "root.sg1.d1",
+                MeasurementSchema::new(
+                    "temperature".to_string(),
+                    TSDataType::Int64,
+                    TSEncoding::Plain,
+                    CompressionType::Uncompressed,
+                ),
+            );
+            for (&t, &v) in times.iter().zip(values.iter()) {
+                let mut rec = TsRecord::new("root.sg1.d1", t);
+                rec.add_i64("temperature", v);
+                writer.write_record(&rec).unwrap();
+            }
+            writer.close().unwrap();
+        }
+
+        // --- Read ChunkMeta ---
+        let mut reader = TsFileIOReader::open(&path).unwrap();
+        let dev = DeviceId::parse("root.sg1.d1").unwrap();
+        let ts_indexes = reader.get_timeseries_indexes(&dev).unwrap();
+        let ts_index = ts_indexes.get("temperature").expect("measurement not found");
+        assert!(!ts_index.chunk_meta_list.is_empty(), "no ChunkMeta entries");
+        let cm = ts_index.chunk_meta_list[0].clone();
+
+        // --- load_chunk ---
+        let (header, page_bytes) = reader.load_chunk(&cm).unwrap();
+
+        // (a) header metadata matches what was written
+        assert_eq!(header.measurement_name, "temperature");
+
+        // (b) byte count matches header.data_size
+        assert_eq!(page_bytes.len(), header.data_size as usize);
+
+        // (c) RegularChunkReader can decode the bytes into the original values
+        let col_meta: Arc<[ColumnMeta]> = Arc::from(vec![ColumnMeta {
+            name: "temperature".into(),
+            data_type: TSDataType::Int64,
+        }]);
+        let mut chunk_reader = RegularChunkReader::new(header, page_bytes, col_meta, None);
+        let block = chunk_reader.next_block().unwrap().expect("expected a TsBlock");
+        assert_eq!(block.times, times);
+        match &block.columns[0] {
+            crate::reader::tsblock::Column::Int64 { values: v, nulls: _ } => {
+                assert_eq!(v, &values);
+            }
+            other => panic!("unexpected column variant: {other:?}"),
+        }
+        assert!(chunk_reader.next_block().unwrap().is_none(), "expected exactly one page");
     }
 }
