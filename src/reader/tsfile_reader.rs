@@ -113,6 +113,7 @@ impl TsFileReader {
 /// value chunk lists (in the order of `series`). The writer stores
 /// aligned time chunks under measurement_name = "" (see
 /// src/writer/time_chunk_writer.rs).
+#[allow(clippy::type_complexity)]
 fn gather_aligned_chunks(
     io: &mut TsFileIOReader,
     device: &DeviceId,
@@ -227,5 +228,25 @@ mod tests {
         let err = reader.query(&device, &[], None)
             .err().expect("expected an error");
         assert!(matches!(err, TsFileError::InvalidArg(_)));
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_non_aligned_int64_round_trip(
+            values in proptest::collection::vec(any::<i64>(), 1..200usize),
+        ) {
+            let (_dir, path, device, measurement) =
+                test_fixtures::write_non_aligned_int64_values(&values);
+            let mut reader = TsFileReader::open(&path).unwrap();
+            let rs = reader.query(&device, &[&measurement], None).unwrap();
+            let rows: Vec<_> = rs.collect::<Result<Vec<_>>>().unwrap();
+            prop_assert_eq!(rows.len(), values.len());
+            for (i, r) in rows.iter().enumerate() {
+                prop_assert_eq!(r.timestamp, i as i64);
+                prop_assert_eq!(&r.values[0], &Some(TsValue::Int64(values[i])));
+            }
+        }
     }
 }

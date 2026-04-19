@@ -6,7 +6,7 @@ use crate::error::Result;
 use crate::io::io_reader::TsFileIOReader;
 use crate::reader::chunk_reader::{AlignedTimeChunkReader, AlignedValueChunkReader, RegularChunkReader};
 use crate::reader::filter::Filter;
-use crate::reader::tsblock::{Column, ColumnMeta, TsBlock};
+use crate::reader::tsblock::{ColumnMeta, TsBlock};
 use crate::tsfile_format::ChunkMeta;
 use std::sync::Arc;
 
@@ -43,9 +43,8 @@ impl<'a> SeriesScanIterator<'a> {
             // Advance, applying chunk-level statistic filter.
             let cm = self.chunks[self.cursor].clone();
             self.cursor += 1;
-            if let Some(f) = self.filter.as_ref() {
-                if !f.satisfy_statistic(&cm.statistic) { continue; }
-            }
+            if let Some(f) = self.filter.as_ref()
+                && !f.satisfy_statistic(&cm.statistic) { continue; }
 
             let (header, page_bytes) = self.io.load_chunk(&cm)?;
             self.current = Some(RegularChunkReader::new(
@@ -141,9 +140,8 @@ impl<'a> AlignedSeriesScan<'a> {
 
             // Chunk-level statistic pruning uses the time chunk's statistic.
             // Value-column predicate pushdown is deferred to phase 5b.
-            if let Some(f) = self.filter.as_ref() {
-                if !f.satisfy_statistic(&time_cm.statistic) { continue; }
-            }
+            if let Some(f) = self.filter.as_ref()
+                && !f.satisfy_statistic(&time_cm.statistic) { continue; }
 
             let (th, tp) = self.io.load_chunk(&time_cm)?;
             self.current_time = Some(AlignedTimeChunkReader::new(th, tp, self.filter.clone()));
@@ -224,7 +222,7 @@ mod tests {
         while let Some(block) = scan.next_block().unwrap() {
             for r in 0..block.num_rows() {
                 let t = block.times[r];
-                let expected_i = t as i64;
+                let expected_i = t;
                 let expected_d = t as f64;
                 match &block.columns[0] {
                     Column::Int64 { values, nulls: Some(bm) } => {

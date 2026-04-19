@@ -2,8 +2,6 @@
 //! `.tsfile`s using the Phase-4 writer so reader tests don't each
 //! re-implement writer setup.
 
-#![cfg(test)]
-
 use crate::config::Config;
 use crate::device_id::DeviceId;
 use crate::schema::MeasurementSchema;
@@ -68,6 +66,48 @@ fn build_int64_tablet(
         tablet.add_value_i64(i, 0, values_vec[i]).unwrap();
     }
     tablet
+}
+
+// ---------------------------------------------------------------------------
+// Proptest fixture (Task 14)
+// ---------------------------------------------------------------------------
+
+/// Write a non-aligned tsfile with one device, one int64 measurement, and
+/// the given `values` sequence (timestamps 0..values.len()). Used by the
+/// proptest in Task 14 to exercise the read path with randomized data.
+/// Returns `(tempdir, path, device, measurement)`.
+///
+/// An empty `values` slice is handled by writing a 1-row tablet with value 0
+/// and then immediately closing — the caller's proptest strategy already
+/// restricts to 1..200 so the empty-slice guard is just a safety net.
+pub fn write_non_aligned_int64_values(
+    values: &[i64],
+) -> (TempDir, PathBuf, DeviceId, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("prop.tsfile");
+    let device = DeviceId::parse("root.sg.prop").unwrap();
+    let measurement = "m".to_string();
+
+    let schema = MeasurementSchema::new(
+        measurement.clone(),
+        TSDataType::Int64,
+        TSEncoding::Ts2Diff,
+        CompressionType::Uncompressed,
+    );
+
+    let mut w = TsFileWriter::new(&path, Arc::new(Config::default())).unwrap();
+    // Build a single tablet containing all rows. If values is empty we
+    // still need a non-zero capacity to avoid panics in Tablet::new.
+    let n = values.len().max(1);
+    let mut tablet = Tablet::new(device.to_string(), vec![schema], n);
+    for (i, v) in values.iter().enumerate() {
+        tablet.add_timestamp(i, i as i64).unwrap();
+        tablet.add_value_i64(i, 0, *v).unwrap();
+    }
+    w.write_tablet(&tablet).unwrap();
+    w.close().unwrap();
+
+    (dir, path, device, measurement)
 }
 
 // ---------------------------------------------------------------------------

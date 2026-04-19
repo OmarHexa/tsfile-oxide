@@ -74,12 +74,11 @@ impl RegularChunkReader {
             // Page-level statistic pruning (only applicable to multi-page chunks).
             if let (Some(filter), Some(stat)) =
                 (self.filter.as_ref(), page_header.statistic.as_ref())
+                && !filter.satisfy_statistic(stat)
             {
-                if !filter.satisfy_statistic(stat) {
-                    let mut skip = vec![0u8; page_header.compressed_size as usize];
-                    self.remaining.read_exact(&mut skip)?;
-                    continue;
-                }
+                let mut skip = vec![0u8; page_header.compressed_size as usize];
+                self.remaining.read_exact(&mut skip)?;
+                continue;
             }
 
             let mut compressed = vec![0u8; page_header.compressed_size as usize];
@@ -236,12 +235,11 @@ impl AlignedTimeChunkReader {
 
             if let (Some(f), Some(stat)) =
                 (self.filter.as_ref(), page_header.statistic.as_ref())
+                && !f.satisfy_statistic(stat)
             {
-                if !f.satisfy_statistic(stat) {
-                    let mut skip = vec![0u8; page_header.compressed_size as usize];
-                    self.remaining.read_exact(&mut skip)?;
-                    continue;
-                }
+                let mut skip = vec![0u8; page_header.compressed_size as usize];
+                self.remaining.read_exact(&mut skip)?;
+                continue;
             }
 
             let mut compressed = vec![0u8; page_header.compressed_size as usize];
@@ -290,7 +288,7 @@ impl AlignedValueChunkReader {
 
         // Split body into [bitmap | value_bytes].
         // Bitmap layout: ceil(n / 8) bytes, LSB-first (bit r set = row r is null).
-        let bitmap_bytes = (n + 7) / 8;
+        let bitmap_bytes = n.div_ceil(8);
         if body.len() < bitmap_bytes {
             return Err(TsFileError::Corrupted(format!(
                 "aligned value page too small for {n} rows: body={} bytes, need >= {bitmap_bytes}",
@@ -686,12 +684,12 @@ mod tests {
         match col {
             Column::Int64 { values, nulls: Some(bm) } => {
                 assert_eq!(values.len(), 10);
-                for i in 0..10usize {
+                for (i, &v) in values.iter().enumerate() {
                     if i % 3 == 0 {
                         assert!(bm.get(i), "row {i} should be null");
                     } else {
                         assert!(!bm.get(i), "row {i} should be present");
-                        assert_eq!(values[i], (i as i64) * 100);
+                        assert_eq!(v, (i as i64) * 100);
                     }
                 }
             }
