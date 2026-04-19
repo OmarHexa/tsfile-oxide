@@ -19,7 +19,7 @@ pub mod tsfile_reader;
 
 // Re-enabled as each type is introduced by subsequent tasks.
 // pub use chunk_reader::ChunkReader;
-// pub use filter::Filter;
+pub use filter::Filter;
 // pub use metadata_querier::MetadataQuerier;
 // pub use result_set::ResultSet;
 pub use row_record::RowRecord;
