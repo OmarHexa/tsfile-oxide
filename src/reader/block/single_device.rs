@@ -62,6 +62,11 @@ impl<'a> SingleDeviceTsBlockReader<'a> {
         for i in 0..self.scanners.len() {
             if self.head_blocks[i].is_none()
                 && let Some(b) = self.scanners[i].next_block()? {
+                    // Invariant: the writer never emits zero-row pages;
+                    // a debug-only guard catches a regression in the
+                    // chunk reader or writer that would otherwise panic
+                    // below on an out-of-bounds index.
+                    debug_assert!(!b.is_empty(), "scanner emitted a zero-row block");
                     self.head_blocks[i] = Some(b);
                     self.head_cursors[i] = 0;
                 }
@@ -117,7 +122,11 @@ impl<'a> SingleDeviceTsBlockReader<'a> {
                     None => false,
                 };
                 if exhausted {
-                    self.head_blocks[i] = self.scanners[i].next_block()?;
+                    let next = self.scanners[i].next_block()?;
+                    if let Some(b) = next.as_ref() {
+                        debug_assert!(!b.is_empty(), "scanner emitted a zero-row block");
+                    }
+                    self.head_blocks[i] = next;
                     self.head_cursors[i] = 0;
                 }
             }

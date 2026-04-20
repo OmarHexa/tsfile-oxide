@@ -320,6 +320,33 @@ mod tests {
         assert_eq!(rows.last().unwrap().timestamp, 8);
     }
 
+    #[test]
+    fn multi_measurement_non_aligned_batch_size_cap() {
+        // 700 rows per measurement = 1400 merged rows. BATCH_SIZE is 1024,
+        // so the merger must return at least two blocks. Uses next_block()
+        // directly so we can inspect block boundaries, then verifies the
+        // concatenated times form the expected 0..1400 sequence.
+        let (_dir, path, device, m1, m2) =
+            test_fixtures::write_non_aligned_two_measurements(700);
+        let mut reader = TsFileReader::open(&path).unwrap();
+        let mut rs = reader.query(&device, &[&m1, &m2], None).unwrap();
+
+        let mut total_rows = 0usize;
+        let mut block_count = 0usize;
+        let mut last_time = -1i64;
+        while let Some(block) = rs.next_block().unwrap() {
+            assert!(block.num_rows() <= 1024, "block exceeded BATCH_SIZE");
+            for &t in &block.times {
+                assert_eq!(t, last_time + 1, "timestamps must be contiguous");
+                last_time = t;
+            }
+            total_rows += block.num_rows();
+            block_count += 1;
+        }
+        assert_eq!(total_rows, 1400);
+        assert!(block_count >= 2, "expected >= 2 blocks, got {block_count}");
+    }
+
     use proptest::prelude::*;
 
     proptest! {
