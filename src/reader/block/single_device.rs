@@ -60,12 +60,11 @@ impl<'a> SingleDeviceTsBlockReader<'a> {
     pub fn next_block(&mut self) -> Result<Option<TsBlock>> {
         // 1. Refill any empty head slot.
         for i in 0..self.scanners.len() {
-            if self.head_blocks[i].is_none() {
-                if let Some(b) = self.scanners[i].next_block()? {
+            if self.head_blocks[i].is_none()
+                && let Some(b) = self.scanners[i].next_block()? {
                     self.head_blocks[i] = Some(b);
                     self.head_cursors[i] = 0;
                 }
-            }
         }
         if self.head_blocks.iter().all(|h| h.is_none()) {
             return Ok(None);
@@ -97,6 +96,10 @@ impl<'a> SingleDeviceTsBlockReader<'a> {
             out_times.push(min_time);
 
             // 3c. For each column, consume if head matches, else null.
+            // `c` indexes three parallel vectors (out_columns, head_blocks,
+            // head_cursors) simultaneously, so a range loop is clearer than
+            // enumerate() over one of them.
+            #[allow(clippy::needless_range_loop)]
             for c in 0..n_cols {
                 match self.head_blocks[c].as_ref() {
                     Some(b) if b.times[self.head_cursors[c]] == min_time => {

@@ -338,5 +338,28 @@ mod tests {
                 prop_assert_eq!(&r.values[0], &Some(TsValue::Int64(values[i])));
             }
         }
+
+        #[test]
+        fn prop_multi_measurement_non_aligned_merge_round_trip(
+            n in 1usize..50,
+        ) {
+            let (_dir, path, device, m1, m2) =
+                test_fixtures::write_non_aligned_two_measurements(n);
+            let mut reader = TsFileReader::open(&path).unwrap();
+            let rs = reader.query(&device, &[&m1, &m2], None).unwrap();
+            let rows: Vec<_> = rs.collect::<Result<Vec<_>>>().unwrap();
+
+            prop_assert_eq!(rows.len(), 2 * n);
+            for (i, r) in rows.iter().enumerate() {
+                prop_assert_eq!(r.timestamp, i as i64);
+                if i % 2 == 0 {
+                    prop_assert_eq!(&r.values[0], &Some(TsValue::Int64(i as i64)));
+                    prop_assert_eq!(&r.values[1], &None);
+                } else {
+                    prop_assert_eq!(&r.values[0], &None);
+                    prop_assert_eq!(&r.values[1], &Some(TsValue::Int64(i as i64)));
+                }
+            }
+        }
     }
 }
