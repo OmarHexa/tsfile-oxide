@@ -296,8 +296,14 @@ pub fn validate_magic_header(file: &mut ReadFile) -> Result<()> {
         buf[0]
     };
     if version != VERSION_NUMBER {
-        return Err(TsFileError::Corrupted(format!(
-            "unsupported TsFile version {version}, expected {VERSION_NUMBER}"
+        // Known gap: version 3 files (older C++ writers) use a different
+        // footer layout than our writer. Reading them requires a dedicated
+        // C++-interop sub-phase; surface the gap explicitly rather than
+        // failing at a deeper offset arithmetic step.
+        return Err(TsFileError::Unsupported(format!(
+            "TsFile version {version} not supported by this reader \
+             (only version {VERSION_NUMBER} is implemented; C++-interop \
+             with v3 is a future phase)"
         )));
     }
     Ok(())
