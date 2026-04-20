@@ -110,6 +110,62 @@ pub fn write_non_aligned_int64_values(
     (dir, path, device, measurement)
 }
 
+/// Write a non-aligned tsfile with one device and TWO int64 measurements:
+/// `m1` at even timestamps `[0, 2, 4, ..., 2n-2]` and `m2` at odd
+/// timestamps `[1, 3, 5, ..., 2n-1]`. Values equal the timestamp
+/// (simplifies round-trip assertions).
+///
+/// Each measurement is written in its own tablet with its own schema,
+/// with `w.flush()` between them so each ends up in a separate chunk.
+/// Returns `(tempdir, path, device, m1_name, m2_name)`.
+pub fn write_non_aligned_two_measurements(
+    n: usize,
+) -> (TempDir, PathBuf, DeviceId, String, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("two_measurements.tsfile");
+    let device = DeviceId::parse("root.sg.dual").unwrap();
+    let m1 = "m1".to_string();
+    let m2 = "m2".to_string();
+
+    let schema1 = MeasurementSchema::new(
+        m1.clone(),
+        TSDataType::Int64,
+        TSEncoding::Ts2Diff,
+        CompressionType::Uncompressed,
+    );
+    let schema2 = MeasurementSchema::new(
+        m2.clone(),
+        TSDataType::Int64,
+        TSEncoding::Ts2Diff,
+        CompressionType::Uncompressed,
+    );
+
+    let mut w = TsFileWriter::new(&path, Arc::new(Config::default())).unwrap();
+
+    // Tablet 1: m1 at even timestamps.
+    let capacity = n.max(1);
+    let mut t1 = Tablet::new(device.to_string(), vec![schema1], capacity);
+    for i in 0..n {
+        let t = (i as i64) * 2;
+        t1.add_timestamp(i, t).unwrap();
+        t1.add_value_i64(i, 0, t).unwrap();
+    }
+    w.write_tablet(&t1).unwrap();
+    w.flush().unwrap();
+
+    // Tablet 2: m2 at odd timestamps.
+    let mut t2 = Tablet::new(device.to_string(), vec![schema2], capacity);
+    for i in 0..n {
+        let t = (i as i64) * 2 + 1;
+        t2.add_timestamp(i, t).unwrap();
+        t2.add_value_i64(i, 0, t).unwrap();
+    }
+    w.write_tablet(&t2).unwrap();
+    w.close().unwrap();
+
+    (dir, path, device, m1, m2)
+}
+
 // ---------------------------------------------------------------------------
 // Aligned fixtures (Task 11)
 // ---------------------------------------------------------------------------

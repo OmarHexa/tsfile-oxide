@@ -8,6 +8,7 @@ use crate::io::io_reader::TsFileIOReader;
 use crate::reader::filter::Filter;
 use crate::reader::metadata_querier::MetadataQuerier;
 use crate::reader::result_set::ResultSet;
+use crate::reader::block::single_device::SingleDeviceTsBlockReader;
 use crate::reader::scan_iterator::{AlignedSeriesScan, SeriesScanIterator};
 use crate::reader::tsblock::ColumnMeta;
 use crate::tsfile_format::ChunkMeta;
@@ -72,27 +73,73 @@ impl TsFileReader {
         let filter_arc: Option<Arc<dyn Filter>> = filter.map(Arc::from);
 
         if any_regular {
-            // Non-aligned path: exactly one measurement in 5a.
-            if measurements.len() != 1 {
-                return Err(TsFileError::InvalidArg(
-                    "non-aligned queries accept exactly one measurement in 5a".into(),
-                ));
+            // Non-aligned path.
+            if measurements.len() == 1 {
+                // One measurement — direct SeriesScanIterator (5a path).
+                let (name, chunks) = series.pop().unwrap();
+                let dt = chunks.first()
+                    .ok_or_else(|| TsFileError::NotFound(format!("measurement: {device}.{name}")))?
+                    .data_type;
+                let cm: Arc<[ColumnMeta]> = Arc::from(vec![ColumnMeta {
+                    name: name.clone(),
+                    data_type: dt,
+                }]);
+                let it = SeriesScanIterator::new(
+                    &mut self.io,
+                    chunks,
+                    cm.clone(),
+                    filter_arc.clone(),
+                );
+                return Ok(ResultSet::from_regular(it, filter_arc, cm));
             }
-            let (name, chunks) = series.pop().unwrap();
-            let dt = chunks.first()
-                .ok_or_else(|| TsFileError::NotFound(format!("measurement: {device}.{name}")))?
-                .data_type;
-            let cm: Arc<[ColumnMeta]> = Arc::from(vec![ColumnMeta {
-                name: name.clone(),
-                data_type: dt,
-            }]);
-            let it = SeriesScanIterator::new(
-                &mut self.io,
-                chunks,
-                cm.clone(),
-                filter_arc.clone(),
+
+            // N>=2 measurements — route through SingleDeviceTsBlockReader.
+            // Build column_meta from the per-series data types, then build
+            // N SeriesScanIterators. Each scanner borrows &mut self.io; the
+            // borrow checker cannot express "scanners used strictly
+            // sequentially, never concurrently" so we use a raw pointer to
+            // hand each scanner its own &mut reference. This matches the
+            // C++ convention of sharing a `TsFileIOReader*` across
+            // scanners by convention.
+            //
+            // SAFETY invariant (load-bearing): SingleDeviceTsBlockReader
+            // drives scanners strictly sequentially. At any moment, at
+            // most one scanner's `next_block` is executing; its &mut
+            // borrow of `*self.io` is live only for that call. No two
+            // &mut references to the same object are ever simultaneously
+            // in use. Phase 5b-ii may replace this with a cell-based
+            // wrapper if a safer pattern proves cleaner.
+            let column_meta: Arc<[ColumnMeta]> = Arc::from(
+                series
+                    .iter()
+                    .map(|(name, chunks)| ColumnMeta {
+                        name: name.clone(),
+                        data_type: chunks[0].data_type,
+                    })
+                    .collect::<Vec<_>>(),
             );
-            return Ok(ResultSet::from_regular(it, filter_arc, cm));
+            let scanners: Vec<SeriesScanIterator<'_>> = {
+                let io_ptr: *mut TsFileIOReader = &mut self.io;
+                series
+                    .into_iter()
+                    .map(|(name, chunks)| {
+                        let cm: Arc<[ColumnMeta]> = Arc::from(vec![ColumnMeta {
+                            name,
+                            data_type: chunks[0].data_type,
+                        }]);
+                        // SAFETY: see block comment above.
+                        let io_ref: &mut TsFileIOReader = unsafe { &mut *io_ptr };
+                        SeriesScanIterator::new(
+                            io_ref,
+                            chunks,
+                            cm,
+                            filter_arc.clone(),
+                        )
+                    })
+                    .collect()
+            };
+            let merger = SingleDeviceTsBlockReader::new(scanners, column_meta.clone())?;
+            return Ok(ResultSet::from_single_device(merger, filter_arc, column_meta));
         }
 
         // Aligned path.
@@ -201,15 +248,20 @@ mod tests {
     }
 
     #[test]
-    fn non_aligned_requires_single_measurement() {
+    fn non_aligned_multi_measurement_succeeds() {
+        // This test previously asserted that multi-measurement non-aligned
+        // queries returned InvalidArg (5a restriction). Phase 5b-i lifts that
+        // restriction by routing N>=2 measurements through
+        // SingleDeviceTsBlockReader, so the query must now succeed.
         let (_dir, path, device, measurement) =
             test_fixtures::write_two_chunk_int64_file();
         let mut reader = TsFileReader::open(&path).unwrap();
-        // unwrap_err() requires T: Debug; use .err().expect() instead since
-        // ResultSet holds dyn Trait fields that don't derive Debug.
-        let err = reader.query(&device, &[&measurement, &measurement], None)
-            .err().expect("expected an error");
-        assert!(matches!(err, TsFileError::InvalidArg(_)), "expected InvalidArg, got {err:?}");
+        // Querying the same measurement twice is degenerate but exercises the
+        // N>=2 code path without needing a two-measurement fixture here.
+        let rs = reader.query(&device, &[&measurement, &measurement], None).unwrap();
+        let rows: Vec<_> = rs.collect::<Result<Vec<_>>>().unwrap();
+        // Two-chunk fixture has 20 rows total; both columns show the same value.
+        assert!(rows.len() >= 20);
     }
 
     #[test]
@@ -228,6 +280,44 @@ mod tests {
         let err = reader.query(&device, &[], None)
             .err().expect("expected an error");
         assert!(matches!(err, TsFileError::InvalidArg(_)));
+    }
+
+    #[test]
+    fn multi_measurement_non_aligned_round_trip() {
+        let (_dir, path, device, m1, m2) =
+            test_fixtures::write_non_aligned_two_measurements(10);
+        let mut reader = TsFileReader::open(&path).unwrap();
+        let rs = reader.query(&device, &[&m1, &m2], None).unwrap();
+        let rows: Vec<_> = rs.collect::<Result<Vec<_>>>().unwrap();
+
+        // 10 m1 rows (even ts 0..=18) + 10 m2 rows (odd ts 1..=19)
+        // = 20 unique timestamps. At each row, exactly one column is populated.
+        assert_eq!(rows.len(), 20);
+        for (i, r) in rows.iter().enumerate() {
+            assert_eq!(r.timestamp, i as i64);
+            if i % 2 == 0 {
+                assert_eq!(r.values[0], Some(TsValue::Int64(i as i64)));
+                assert_eq!(r.values[1], None);
+            } else {
+                assert_eq!(r.values[0], None);
+                assert_eq!(r.values[1], Some(TsValue::Int64(i as i64)));
+            }
+        }
+    }
+
+    #[test]
+    fn multi_measurement_non_aligned_filter_pushdown_time_between() {
+        let (_dir, path, device, m1, m2) =
+            test_fixtures::write_non_aligned_two_measurements(10);
+        let mut reader = TsFileReader::open(&path).unwrap();
+        let filter: Box<dyn Filter> = Box::new(crate::reader::filter::time::TimeBetween::new(4, 8, true));
+        let rs = reader.query(&device, &[&m1, &m2], Some(filter)).unwrap();
+        let rows: Vec<_> = rs.collect::<Result<Vec<_>>>().unwrap();
+
+        // Row-level filter keeps timestamps 4..=8 = 5 rows.
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows.first().unwrap().timestamp, 4);
+        assert_eq!(rows.last().unwrap().timestamp, 8);
     }
 
     use proptest::prelude::*;
