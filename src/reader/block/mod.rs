@@ -5,4 +5,4 @@
 
 pub mod single_device;
 
-// pub use single_device::SingleDeviceTsBlockReader; // re-enabled in Task 2
+pub use single_device::SingleDeviceTsBlockReader;

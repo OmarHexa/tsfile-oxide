@@ -18,6 +18,7 @@ pub mod scan_iterator;
 pub mod tsblock;
 pub mod tsfile_reader;
 
+pub use block::SingleDeviceTsBlockReader;
 pub use chunk_reader::{AlignedTimeChunkReader, AlignedValueChunkReader, RegularChunkReader};
 pub use filter::Filter;
 pub use metadata_querier::MetadataQuerier;
