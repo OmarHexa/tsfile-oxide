@@ -10,6 +10,7 @@
 use crate::error::Result;
 use crate::reader::filter::Filter;
 use crate::reader::row_record::RowRecord;
+use crate::reader::block::single_device::SingleDeviceTsBlockReader;
 use crate::reader::scan_iterator::{AlignedSeriesScan, SeriesScanIterator};
 use crate::reader::tsblock::{Column, ColumnMeta, TsBlock};
 use crate::value::TsValue;
@@ -18,6 +19,7 @@ use std::sync::Arc;
 enum ScanSource<'a> {
     Regular(SeriesScanIterator<'a>),
     Aligned(AlignedSeriesScan<'a>),
+    SingleDevice(SingleDeviceTsBlockReader<'a>),
 }
 
 pub struct ResultSet<'a> {
@@ -57,6 +59,20 @@ impl<'a> ResultSet<'a> {
         }
     }
 
+    pub(crate) fn from_single_device(
+        it: SingleDeviceTsBlockReader<'a>,
+        filter: Option<Arc<dyn Filter>>,
+        column_meta: Arc<[ColumnMeta]>,
+    ) -> Self {
+        Self {
+            source: ScanSource::SingleDevice(it),
+            filter,
+            column_meta,
+            current_block: None,
+            row_cursor: 0,
+        }
+    }
+
     pub fn column_meta(&self) -> &[ColumnMeta] { &self.column_meta }
 
     /// Pull the next TsBlock from the underlying scanner.
@@ -81,6 +97,7 @@ impl<'a> ResultSet<'a> {
         match &mut self.source {
             ScanSource::Regular(it) => it.next_block(),
             ScanSource::Aligned(it) => it.next_block(),
+            ScanSource::SingleDevice(it) => it.next_block(),
         }
     }
 
